@@ -6,6 +6,7 @@
 #include <sys/mman.h>
 #include <turbojpeg.h>
 #include <opencv2/opencv.hpp>
+#include "simpleConfigParser.h"
 
 void printV4L2Capability(const struct v4l2_capability& cap) {
     printf("Driver: %s\n", cap.driver);
@@ -14,10 +15,17 @@ void printV4L2Capability(const struct v4l2_capability& cap) {
     printf("Version: %u.%u.%u\n\n", (cap.version >> 16) & 0xFF, (cap.version >> 8) & 0xFF, cap.version & 0xFF);
 }
 
-int main() {
-    std::cout << "Hello, World!" << std::endl;
+int main(int argc, char** argv) {
+    if (argc != 2) {
+        std::cout << "Usage: " << argv[0] << " <config file>" << std::endl;
+        return -1;
+    }
 
-    int fd = open("/dev/video0", O_RDWR);
+    std::map<std::string, std::string> config = parseConfig(argv[1]);
+
+    std::cout << config["capture_device"] << std::endl;
+
+    int fd = open(config["capture_device"].c_str(), O_RDWR);
     if (fd == -1) {
         std::cout << "Error opening device" << std::endl;
         return -1;
@@ -92,6 +100,8 @@ int main() {
     // Create JPEG decompressor
     tjhandle tjhandle = tjInitDecompress();
 
+    unsigned char *rgbBuffer = nullptr;
+
     while (true) {
         // Dequeue buffer
         if (ioctl(fd, VIDIOC_DQBUF, &buf) == -1) {
@@ -101,15 +111,30 @@ int main() {
 
         // Decompress JPEG
         int width, height, jpegsubsamp, jpegcolorspace;
-        tjDecompressHeader3(tjhandle, static_cast<unsigned char*>(buffer), buf.bytesused, &width, &height, &jpegsubsamp, &jpegcolorspace);
+        int header_result = tjDecompressHeader3(tjhandle, static_cast<unsigned char*>(buffer), buf.bytesused, &width, &height, &jpegsubsamp, &jpegcolorspace);
+        if(header_result == -1) {
+            std::cout << "Error decompressing header, fetching new buffer" << std::endl;
+            // Queue buffer
+            while (ioctl(fd, VIDIOC_QBUF, &buf) == -1) {
+                std::cout << "Error queuing buffer" << std::endl;
+            }
+            continue;
+        }
 
-        unsigned char *rgbBuffer = new unsigned char[width * height * 3];
+        // First time, allocate buffer
+        if(rgbBuffer == nullptr) {
+            rgbBuffer = new unsigned char[width * height * 3];
+        }
+
+        // Decompress jpeg
         tjDecompress2(tjhandle, static_cast<unsigned char*>(buffer), buf.bytesused, rgbBuffer, width, 0, height, TJPF_RGB, 0);
 
         cv::Mat image(height, width, CV_8UC3, rgbBuffer);
         cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
         cv::imshow("Image", image);
-        cv::waitKey(1);
+        if(cv::waitKey(1) != -1) {
+            break;
+        }
 
         std::cout << "Update" << std::endl;
 
@@ -118,6 +143,21 @@ int main() {
             std::cout << "Error queuing buffer" << std::endl;
         }
     }
+
+    delete[] rgbBuffer;
+
+    // Stop streaming
+    if(ioctl(fd, VIDIOC_STREAMOFF, &type) == -1) {
+        std::cout << "Error stopping stream" << std::endl;
+        return -1;
+    }
+
+    // Unmap buffer
+    munmap(buffer, buf.length);
+
+    // Close device
+    close(fd);
+
 
     return 0;
 }

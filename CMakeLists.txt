@@ -6,6 +6,7 @@ find_package(OpenCV REQUIRED)
 
 set(SOURCES
     main.cpp
+    simpleConfigParser.h
 )
 
 
