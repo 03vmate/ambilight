@@ -28,7 +28,6 @@ void v4l2_sighandler(int signum) {
 }
 
 uint8_t* colorOfBlock(const uint8_t* img, int imgwidth, int imgheight, int x, int y, int width, int height) {
-    signal(SIGINT, v4l2_sighandler);
     uint32_t* color = new uint32_t[3];
     color[0] = 0;
     color[1] = 0;
