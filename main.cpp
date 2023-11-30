@@ -7,6 +7,7 @@
 #include <turbojpeg.h>
 #include <opencv2/opencv.hpp>
 #include "simpleConfigParser.h"
+#include "image_utils.h"
 
 void printV4L2Capability(const struct v4l2_capability& cap) {
     printf("Driver: %s\n", cap.driver);
@@ -23,7 +24,16 @@ int main(int argc, char** argv) {
 
     std::map<std::string, std::string> config = parseConfig(argv[1]);
 
-    std::cout << config["capture_device"] << std::endl;
+    int vertical_leds = std::stoi(config["vertical_leds"]);
+    int horizontal_leds = std::stoi(config["horizontal_leds"]);
+    int border_size = std::stoi(config["border_size"]);
+    int capture_width = std::stoi(config["capture_width"]);
+    int capture_height = std::stoi(config["capture_height"]);
+    int capture_fps = std::stoi(config["capture_fps"]);
+    float column_block_width = border_size;
+    float column_block_height = (float)capture_height / vertical_leds;
+    float row_block_height = border_size;
+    float row_block_width = (float)capture_width / horizontal_leds;
 
     int fd = open(config["capture_device"].c_str(), O_RDWR);
     if (fd == -1) {
@@ -43,8 +53,8 @@ int main(int argc, char** argv) {
     // Set capture format
     struct v4l2_format format;
     format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    format.fmt.pix.width = 1920;
-    format.fmt.pix.height = 1080;
+    format.fmt.pix.width = capture_width;
+    format.fmt.pix.height = capture_height;
     format.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG;
     format.fmt.pix.field = V4L2_FIELD_NONE;
     if(ioctl(fd, VIDIOC_S_FMT, &format) == -1) {
@@ -56,8 +66,8 @@ int main(int argc, char** argv) {
     struct v4l2_streamparm fps;
     memset(&fps, 0, sizeof(fps));
     fps.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    fps.parm.capture.timeperframe.numerator = 1; // Set the numerator of the frame rate
-    fps.parm.capture.timeperframe.denominator = 30; // Set the denominator of the frame rate (e.g., 30 frames per second)
+    fps.parm.capture.timeperframe.numerator = 1;
+    fps.parm.capture.timeperframe.denominator = capture_fps; //FPS = denominator / numerator
     if (ioctl(fd, VIDIOC_S_PARM, &fps) == -1) {
         std::cout << "Error setting frame rate" << std::endl;
         return -1;
@@ -129,14 +139,58 @@ int main(int argc, char** argv) {
         // Decompress jpeg
         tjDecompress2(tjhandle, static_cast<unsigned char*>(buffer), buf.bytesused, rgbBuffer, width, 0, height, TJPF_RGB, 0);
 
-        cv::Mat image(height, width, CV_8UC3, rgbBuffer);
-        cv::cvtColor(image, image, cv::COLOR_RGB2BGR);
-        cv::imshow("Image", image);
-        if(cv::waitKey(1) != -1) {
-            break;
+        uint8_t*** img = flatbufToImg(rgbBuffer, width, height);
+        uint8_t* leddata = new uint8_t[(horizontal_leds + vertical_leds) * 2 * 3];
+        ssize_t leddata_index = 0;
+
+        
+        //right column, bottom to top
+        for(int i = vertical_leds - 1; i >= 0; i--) {
+            int block_top = i * column_block_height;
+            int block_left = 0;
+            uint8_t* color = colorOfBlock(img, block_left, block_top, column_block_width, column_block_height);
+            leddata[leddata_index++] = color[0];
+            leddata[leddata_index++] = color[1];
+            leddata[leddata_index++] = color[2];
+            delete[] color;
+        }
+
+        //top row, right to left
+        for(int i = horizontal_leds - 1; i >= 0; i--) {
+            int block_top = 0;
+            int block_left = i * row_block_width;
+            uint8_t* color = colorOfBlock(img, block_left, block_top, row_block_width, row_block_height);
+            leddata[leddata_index++] = color[0];
+            leddata[leddata_index++] = color[1];
+            leddata[leddata_index++] = color[2];
+            delete[] color;
+        }
+
+        //left column, top to bottom
+        for(int i = 0; i < vertical_leds; i++) {
+            int block_top = i * column_block_height;
+            int block_left = 0;
+            uint8_t* color = colorOfBlock(img, block_left, block_top, column_block_width, column_block_height);
+            leddata[leddata_index++] = color[0];
+            leddata[leddata_index++] = color[1];
+            leddata[leddata_index++] = color[2];
+            delete[] color;
+        }
+
+        //bottom row, left to right
+        for(int i = 0; i < horizontal_leds; i++) {
+            int block_top = capture_height - row_block_height;
+            int block_left = i * row_block_width;
+            uint8_t* color = colorOfBlock(img, block_left, block_top, row_block_width, row_block_height);
+            leddata[leddata_index++] = color[0];
+            leddata[leddata_index++] = color[1];
+            leddata[leddata_index++] = color[2];
+            delete[] color;
         }
 
         std::cout << "Update" << std::endl;
+
+        freeImg(img, width, height);
 
         // Queue buffer
         while (ioctl(fd, VIDIOC_QBUF, &buf) == -1) {
