@@ -47,6 +47,21 @@ uint8_t* colorOfBlock(const uint8_t* img, int imgwidth, int imgheight, int x, in
     return color_byte;
 }
 
+void xImageToRGBArray(XImage *xImage, unsigned char *rgbArray) {
+    for (int y = 0; y < xImage->height; y++) {
+        for (int x = 0; x < xImage->width; x++) {
+            unsigned long pixel = XGetPixel(xImage, x, y);
+            unsigned char red = (pixel & xImage->red_mask) >> 16;
+            unsigned char green = (pixel & xImage->green_mask) >> 8;
+            unsigned char blue = pixel & xImage->blue_mask;
+
+            int index = (y * xImage->width + x) * 3;
+            rgbArray[index] = red;
+            rgbArray[index + 1] = green;
+            rgbArray[index + 2] = blue;
+        }
+    }
+}
 
 int main(int argc, char **argv) {
     signal(SIGINT, signalHandler);
@@ -104,10 +119,14 @@ int main(int argc, char **argv) {
     while(true) {
         XImage *image = XGetImage(display, root, 0, 0, width, height, AllPlanes, ZPixmap);
 
+
         if (!image) {
             fprintf(stderr, "Failed to get image from X server\n");
             exit(1);
         }
+
+        unsigned char* rgbArray = new unsigned char[width * height * 3];
+        xImageToRGBArray(image, rgbArray);
 
         //"extract" the colors of the LEDs from the image
         ssize_t leddata_index = 0;
@@ -115,7 +134,7 @@ int main(int argc, char **argv) {
         for(int i = vertical_leds - 1; i >= 0; i--) {
             int block_top = i * column_block_height;
             int block_left = width - border_size;
-            uint8_t* color = colorOfBlock((uint8_t*)image->data, width, height, block_left, block_top, border_size, (int)column_block_height);
+            uint8_t* color = colorOfBlock(rgbArray, width, height, block_left, block_top, border_size, (int)column_block_height);
             leddata[leddata_index++] = color[0];
             leddata[leddata_index++] = color[1];
             leddata[leddata_index++] = color[2];
@@ -125,7 +144,7 @@ int main(int argc, char **argv) {
         for(int i = horizontal_leds - 1; i >= 0; i--) {
             int block_top = 0;
             int block_left = i * row_block_width;
-            uint8_t* color = colorOfBlock((uint8_t*)image->data, width, height, block_left, block_top, (int)row_block_width, border_size);
+            uint8_t* color = colorOfBlock(rgbArray, width, height, block_left, block_top, (int)row_block_width, border_size);
             leddata[leddata_index++] = color[0];
             leddata[leddata_index++] = color[1];
             leddata[leddata_index++] = color[2];
@@ -135,7 +154,7 @@ int main(int argc, char **argv) {
         for(int i = 0; i < vertical_leds; i++) {
             int block_top = i * column_block_height;
             int block_left = 0;
-            uint8_t* color = colorOfBlock((uint8_t*)image->data, width, height, block_left, block_top, border_size, (int)column_block_height);
+            uint8_t* color = colorOfBlock(rgbArray, width, height, block_left, block_top, border_size, (int)column_block_height);
             leddata[leddata_index++] = color[0];
             leddata[leddata_index++] = color[1];
             leddata[leddata_index++] = color[2];
@@ -145,7 +164,7 @@ int main(int argc, char **argv) {
         for(int i = 0; i < horizontal_leds; i++) {
             int block_top = height - border_size;
             int block_left = i * row_block_width;
-            uint8_t* color = colorOfBlock((uint8_t*)image->data, width, height, block_left, block_top, (int)row_block_width, border_size);
+            uint8_t* color = colorOfBlock(rgbArray, width, height, block_left, block_top, (int)row_block_width, border_size);
             leddata[leddata_index++] = color[0];
             leddata[leddata_index++] = color[1];
             leddata[leddata_index++] = color[2];
