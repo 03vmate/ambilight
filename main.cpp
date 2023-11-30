@@ -1,10 +1,7 @@
-#include <opencv2/opencv.hpp>
 #include "simpleConfigParser.h"
 #include "v4l2mode.hpp"
-#include "SerialPort.hpp"
 #include "networkmode.hpp"
 #include <iostream>
-
 
 int main(int argc, char** argv) {
     if (argc != 2) {
