@@ -8,6 +8,7 @@
 #include <opencv2/opencv.hpp>
 #include "simpleConfigParser.h"
 #include "image_utils.h"
+#include "SerialPort.hpp"
 
 void printV4L2Capability(const struct v4l2_capability& cap) {
     printf("Driver: %s\n", cap.driver);
@@ -24,6 +25,13 @@ int main(int argc, char** argv) {
 
     std::map<std::string, std::string> config = parseConfig(argv[1]);
 
+    SerialPort mcu = SerialPort();
+    int baudrate = std::stoi(config["baud"]);
+    if (mcu.init(config["serial_port"].c_str(), baudrate) != 0) {
+        std::cout << "Error initializing serial port" << std::endl;
+        return -1;
+    }
+
     int vertical_leds = std::stoi(config["vertical_leds"]);
     int horizontal_leds = std::stoi(config["horizontal_leds"]);
     int border_size = std::stoi(config["border_size"]);
@@ -34,6 +42,7 @@ int main(int argc, char** argv) {
     float column_block_height = (float)capture_height / vertical_leds;
     float row_block_height = border_size;
     float row_block_width = (float)capture_width / horizontal_leds;
+    double gamma = std::stod(config["gamma_correction"]);
 
     int fd = open(config["capture_device"].c_str(), O_RDWR);
     if (fd == -1) {
@@ -187,6 +196,18 @@ int main(int argc, char** argv) {
             leddata[leddata_index++] = color[2];
             delete[] color;
         }
+
+        // \n is special, as it is used for the end of the message. Replace data in LED colors with the closest brightness that is not \n. Also perform gamma correction.
+        for(int i = 0; i < (horizontal_leds + vertical_leds) * 2 * 3; i++) {
+            leddata[i] = gammaCorrection(leddata[i], gamma);
+            if(leddata[i] == '\n') {
+                leddata[i] -= 1;
+            }
+        }
+
+        // Send data
+        mcu.write(reinterpret_cast<const char*>(leddata), (horizontal_leds + vertical_leds) * 2 * 3);
+        mcu.write("\n", 1);
 
         std::cout << "Update" << std::endl;
 

@@ -5,8 +5,10 @@ include(FindLibJpegTurbo.cmake)
 find_package(OpenCV REQUIRED)
 
 set(SOURCES
-    main.cpp
-    simpleConfigParser.h
+        main.cpp
+        simpleConfigParser.h
+        SerialPort.cpp
+        SerialPort.hpp
 )
 
 
