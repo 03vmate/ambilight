@@ -12,6 +12,7 @@ set(SOURCES
         simpleConfigParser.h
         SerialPort.cpp
         SerialPort.hpp
+        v4l2mode.hpp
 )
 
 

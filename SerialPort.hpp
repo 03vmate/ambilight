@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <termios.h>
+#pragma once
 
 class SerialPort {
     public:
