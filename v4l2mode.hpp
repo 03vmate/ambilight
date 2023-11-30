@@ -15,26 +15,20 @@
 #include <complex>
 #include "SerialPort.hpp"
 
-bool run = true;
+bool v4l2_run = true;
 
 struct buffer {
     void* start;
     size_t length;
 };
 
-void printV4L2Capability(const struct v4l2_capability& cap) {
-    printf("Driver: %s\n", cap.driver);
-    printf("Card: %s\n", cap.card);
-    printf("Bus Info: %s\n", cap.bus_info);
-    printf("Version: %u.%u.%u\n\n", (cap.version >> 16) & 0xFF, (cap.version >> 8) & 0xFF, cap.version & 0xFF);
-}
-
-void sighandler(int signum) {
-    printf("Caught signal %d\n", signum);
-    run = false;
+void v4l2_sighandler(int signum) {
+    std::cout << "Caught signal " << signum << ", exiting" << std::endl;
+    v4l2_run = false;
 }
 
 uint8_t* colorOfBlock(const uint8_t* img, int imgwidth, int imgheight, int x, int y, int width, int height) {
+    signal(SIGINT, v4l2_sighandler);
     uint32_t* color = new uint32_t[3];
     color[0] = 0;
     color[1] = 0;
@@ -66,15 +60,9 @@ uint8_t gammaCorrection(uint8_t inputBrightness, double gamma) {
 }
 
 void start_v4l2mode(std::map<std::string, std::string> config) {
-    signal(SIGINT, sighandler);
+    signal(SIGINT, v4l2_sighandler);
 
-    SerialPort mcu = SerialPort();
-    int baudrate = std::stoi(config["baud"]);
-    if (mcu.init(config["serial_port"].c_str(), baudrate) != 0) {
-        std::cout << "Error initializing serial port" << std::endl;
-        exit(1);
-    }
-
+    // Parse config
     int vertical_leds = std::stoi(config["vertical_leds"]);
     int horizontal_leds = std::stoi(config["horizontal_leds"]);
     int border_size = std::stoi(config["border_size"]);
@@ -85,7 +73,16 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
     float row_block_width = (float)capture_width / (float)horizontal_leds;
     double gamma = std::stod(config["gamma_correction"]);
     int buffer_count = std::stoi(config["v4l2_buffer_count"]);
+    int baudrate = std::stoi(config["baud"]);
 
+    // Initialize serial port
+    SerialPort mcu = SerialPort();
+    if (mcu.init(config["serial_port"].c_str(), baudrate) != 0) {
+        std::cout << "Error initializing serial port" << std::endl;
+        exit(1);
+    }
+
+    // Open capture device
     int fd = open(config["capture_device"].c_str(), O_RDWR);
     if (fd == -1) {
         std::cout << "Error opening device" << std::endl;
@@ -98,8 +95,10 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
         std::cout << "Error querying device" << std::endl;
         exit(1);
     }
-    printV4L2Capability(cap);
-
+    std::cout << "Driver: " << cap.driver << std::endl;
+    std::cout << "Card: " << cap.card << std::endl;
+    std::cout << "Bus Info: " << cap.bus_info << std::endl;
+    std::cout << "Version: " << ((cap.version >> 16) & 0xFF) << "." << ((cap.version >> 8) & 0xFF) << "." << (cap.version & 0xFF) << std::endl;
 
     // Set capture format
     struct v4l2_format format;
@@ -177,14 +176,13 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
     // Buffer for holding the LED rgb data to send to MCU
     uint8_t* leddata = new uint8_t[(horizontal_leds + vertical_leds) * 2 * 3];
 
-    while (run) {
+    while (v4l2_run) {
         auto start = std::chrono::high_resolution_clock::now();
 
         // Dequeue buffer
         v4l2_buffer buf = {};
         buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         buf.memory = V4L2_MEMORY_MMAP;
-
         if (ioctl(fd, VIDIOC_DQBUF, &buf) == -1) {
             std::cout << "Error dequeueing buffer" << std::endl;
             exit(1);
@@ -193,6 +191,7 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
         auto dqtime = std::chrono::high_resolution_clock::now();
 
 
+        // Decompress header
         int width, height, jpegsubsamp, jpegcolorspace;
         int header_result = tjDecompressHeader3(tjhandle, static_cast<unsigned char*>(buffers[buf.index].start), buffers[buf.index].length, &width, &height, &jpegsubsamp, &jpegcolorspace);
         if(header_result == -1) {
@@ -204,7 +203,7 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
             continue;
         }
 
-        // First time, allocate buffer
+        // First time running, allocate buffer for decoded rgb data
         if(rgbBuffer == nullptr) {
             rgbBuffer = new unsigned char[width * height * 3];
         }
@@ -214,9 +213,8 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
 
         auto decomptime = std::chrono::high_resolution_clock::now();
 
-
+        //"extract" the colors of the LEDs from the image
         ssize_t leddata_index = 0;
-
         //right column, bottom to top
         for(int i = vertical_leds - 1; i >= 0; i--) {
             int block_top = i * column_block_height;
@@ -227,7 +225,6 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
             leddata[leddata_index++] = color[2];
             delete[] color;
         }
-
         //top row, right to left
         for(int i = horizontal_leds - 1; i >= 0; i--) {
             int block_top = 0;
@@ -238,7 +235,6 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
             leddata[leddata_index++] = color[2];
             delete[] color;
         }
-
         //left column, top to bottom
         for(int i = 0; i < vertical_leds; i++) {
             int block_top = i * column_block_height;
@@ -249,7 +245,6 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
             leddata[leddata_index++] = color[2];
             delete[] color;
         }
-
         //bottom row, left to right
         for(int i = 0; i < horizontal_leds; i++) {
             int block_top = capture_height - border_size;
@@ -271,13 +266,11 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
 
         auto proctime = std::chrono::high_resolution_clock::now();
 
-
         // Send data
         mcu.write(reinterpret_cast<const char*>(leddata), (horizontal_leds + vertical_leds) * 2 * 3);
         mcu.write("\n", 1);
 
         auto writetime = std::chrono::high_resolution_clock::now();
-
 
         // Queue buffer
         while (ioctl(fd, VIDIOC_QBUF, &buf) == -1) {
@@ -285,7 +278,6 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
         }
 
         auto stop = std::chrono::high_resolution_clock::now();
-
         auto dqduration = std::chrono::duration_cast<std::chrono::milliseconds>(dqtime - start);
         auto decompduration = std::chrono::duration_cast<std::chrono::milliseconds>(decomptime - dqtime);
         auto procduration = std::chrono::duration_cast<std::chrono::milliseconds>(proctime - decomptime);
@@ -306,11 +298,11 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
         exit(1);
     }
 
-    // Unmap buffer
+    // Unmap buffers
     for (int i = 0; i < buffer_count; ++i) {
         munmap(buffers[i].start, buffers[i].length);
     }
 
-    // Close device
+    // Close v4l2 device
     close(fd);
 }
