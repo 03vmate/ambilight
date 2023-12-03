@@ -1,7 +1,7 @@
 #include "SerialPort.hpp"
-#include <fcntl.h> // Contains file controls like O_RDWR
-#include <errno.h> // Error integer and strerror() function
-#include <unistd.h> // write(), read(), close()
+#include <fcntl.h>
+#include <errno.h>
+#include <unistd.h>
 
 
 int SerialPort::init(const char* port, int baudrate) {
