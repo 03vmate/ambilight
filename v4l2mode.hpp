@@ -14,6 +14,9 @@
 #include <chrono>
 #include <complex>
 #include "SerialPort.hpp"
+#include <emmintrin.h>
+#include <immintrin.h>
+#include "averager.h"
 
 bool v4l2_run = true;
 
@@ -27,35 +30,101 @@ void v4l2_sighandler(int signum) {
     v4l2_run = false;
 }
 
-uint8_t* colorOfBlock(const uint8_t* img, int imgwidth, int imgheight, int x, int y, int width, int height) {
-    uint32_t* color = new uint32_t[3];
-    color[0] = 0;
-    color[1] = 0;
-    color[2] = 0;
+//Original, unoptimized version:
+/*
+uint32_t color[] = {0,0,0};
 
-    for (int xpos = x; xpos < x + width; xpos++) {
-        for (int ypos = y; ypos < y + height; ypos++) {
-            for (int i = 0; i < 3; i++) {
-                int index = (ypos * imgwidth + xpos) * 3 + i;
-                color[i] += img[index];
-            }
+for (int xpos = x; xpos < x + width; xpos++) {
+    for (int ypos = y; ypos < y + height; ypos++) {
+        for (int i = 0; i < 3; i++) {
+            int index = (ypos * imgwidth + xpos) * 3 + i;
+            color[i] += img[index];
+        }
+    }
+}
+
+uint8_t* color_byte = new uint8_t[3];
+
+for (int i = 0; i < 3; i++) {
+    color_byte[i] = color[i] / numOfPixels;
+}
+
+return color_byte;
+}
+*/
+//Calculate average color of a rectangle
+uint8_t* colorOfBlock(const uint8_t* img, int imgwidth, int imgheight, int x, int y, int width, int height) {
+    //If the width is odd, make it even. One of the SIMD optimizations requires this, but do it for all of them to be consistent.
+    if(width % 2 == 1) {
+        if(width > 1) {
+            width -= 1;
+        }
+        else {
+            width += 1;
         }
     }
 
-    uint8_t* color_byte = new uint8_t[3];
+    uint32_t numOfPixels = width * height;
 
-    for (int i = 0; i < 3; i++) {
-        color_byte[i] = color[i] / (width * height);
+    //If the width is larger than 256, use a 128 bit SIMD register containing 4 32 bit integers. The first 3 are used for R,G,B values, the fourth is unused.
+    if(width > 256) {
+        __m128i sum = _mm_setzero_si128();
+        for (int ypos = y; ypos < y + height; ypos++) {
+            for(int xpos = x; xpos < x + width; xpos++) {
+                int index = (ypos * imgwidth + xpos) * 3;
+                __m128i p = _mm_loadu_si128((__m128i*)&img[index]); //load next 16 subpixels into 16x 8bit registers. Only the next 6 is needed. If we are at the very bottom right of the image, this may try to load values outside of the image. To prevent segfaults, 16 bytes of padding is also allocated after the image data ends.
+                __m128i q = _mm_cvtepu8_epi32(p); //convert 8bit registers to 32bit registers, throwing away the upper 24 values. This will leave us with 4 32bit registers, the last of which is unused.
+                sum = _mm_add_epi32(sum, q);
+            }
+        }
+
+        int32_t result[4];
+        _mm_storeu_si128((__m128i*)result, sum);
+        uint8_t *result_byte = new uint8_t[3];
+        result_byte[0] = result[0] / numOfPixels;
+        result_byte[1] = result[1] / numOfPixels;
+        result_byte[2] = result[2] / numOfPixels;
+        return result_byte;
     }
-
-    delete[] color;
-    return color_byte;
+    //If the width is smaller than 256, use a 128 bit SIMD register containing 8 16bit integers. The sum of even pixels is in the first 3 uint16s, the sum of odd pixels is in the following 3 uint16s, and the remaining 2 uint16s are unused.
+    //After each row has been summed, the odd and even sums are added together, and the result is added to the total sum. This appears to be about 5-10% faster.
+    else {
+        uint32_t sum[] = {0, 0, 0};
+        for (int ypos = y; ypos < y + height; ypos++) {
+            __m128i rowsum = _mm_setzero_si128();
+            for(int xpos = x; xpos < x + width; xpos += 2) {
+                int index = (ypos * imgwidth + xpos) * 3;
+                __m128i p = _mm_loadu_si128((__m128i*)&img[index]); //load next 16 subpixels into 16x 8bit registers. Only the next 6 is needed. If we are at the very bottom right of the image, this may try to load values outside of the image. To prevent segfaults, 16 bytes of padding is also allocated after the image data ends.
+                __m128i q = _mm_cvtepu8_epi16(p); //convert 8bit registers to 16bit registers, throwing away the upper 8 values. This will leave us with 8 16bit registers, the last 2 of which are unused.
+                rowsum = _mm_adds_epu16(rowsum, q);
+            }
+            uint16_t rowsum_result[8];
+            _mm_storeu_si128((__m128i*)rowsum_result, rowsum);
+            sum[0] += rowsum_result[0];
+            sum[1] += rowsum_result[1];
+            sum[2] += rowsum_result[2];
+            sum[0] += rowsum_result[3];
+            sum[1] += rowsum_result[4];
+            sum[2] += rowsum_result[5];
+        }
+        uint8_t *result_byte = new uint8_t[3];
+        result_byte[0] = sum[0] / numOfPixels;
+        result_byte[1] = sum[1] / numOfPixels;
+        result_byte[2] = sum[2] / numOfPixels;
+        return result_byte;
+    }
+    return nullptr;
 }
 
 uint8_t gammaCorrection(uint8_t inputBrightness, double gamma) {
     double adjustedBrightness = 255 * std::pow((inputBrightness / 255.0), gamma);
     adjustedBrightness = std::max(0.0, std::min(adjustedBrightness, 255.0));
     return static_cast<uint8_t>(adjustedBrightness);
+}
+
+
+void gammaOpt(__m128i vals, double gamma) {
+
 }
 
 void start_v4l2mode(std::map<std::string, std::string> config) {
@@ -175,6 +244,14 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
     // Buffer for holding the LED rgb data to send to MCU
     uint8_t* leddata = new uint8_t[(horizontal_leds + vertical_leds) * 2 * 3];
 
+    Averager<int64_t> dqtimeAverager(20);
+    Averager<int64_t> decomptimeAverager(20);
+    Averager<int64_t> extracttimeAverager(20);
+    Averager<int64_t> proctimeAverager(20);
+    Averager<int64_t> writetimeAverager(20);
+    Averager<int64_t> queuedurationAverager(20);
+    Averager<int64_t> totaldurationAverager(20);
+
     while (v4l2_run) {
         auto start = std::chrono::high_resolution_clock::now();
 
@@ -204,7 +281,7 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
 
         // First time running, allocate buffer for decoded rgb data
         if(rgbBuffer == nullptr) {
-            rgbBuffer = new unsigned char[width * height * 3];
+            rgbBuffer = new unsigned char[width * height * 3 + 16]; //extra padding for the end, to prevent segfaults when using some SIMD optimizations (see comments in simdblock())
         }
 
         // Decompress jpeg
@@ -255,6 +332,8 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
             delete[] color;
         }
 
+        auto extracttime = std::chrono::high_resolution_clock::now();
+
         // \n is special, as it is used for the end of the message. Replace data in LED colors with the closest brightness that is not \n. Also perform gamma correction.
         for(int i = 0; i < (horizontal_leds + vertical_leds) * 2 * 3; i++) {
             leddata[i] = gammaCorrection(leddata[i], gamma);
@@ -264,6 +343,9 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
         }
 
         auto proctime = std::chrono::high_resolution_clock::now();
+
+
+        
 
         // Send data
         mcu.write(reinterpret_cast<const char*>(leddata), (horizontal_leds + vertical_leds) * 2 * 3);
@@ -277,13 +359,21 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
         }
 
         auto stop = std::chrono::high_resolution_clock::now();
-        auto dqduration = std::chrono::duration_cast<std::chrono::milliseconds>(dqtime - start);
-        auto decompduration = std::chrono::duration_cast<std::chrono::milliseconds>(decomptime - dqtime);
-        auto procduration = std::chrono::duration_cast<std::chrono::milliseconds>(proctime - decomptime);
-        auto writeduration = std::chrono::duration_cast<std::chrono::milliseconds>(writetime - proctime);
-        auto queueduration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - writetime);
-        auto totalduration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
-        std::cout << "\rdq: " << dqduration.count() << "ms | decomp: " << decompduration.count() << "ms | proc: " << procduration.count() << "ms | write: " << writeduration.count() << "ms | queue: " << queueduration.count() << "ms | total: " << totalduration.count() << "ms / " << 1000 / totalduration.count() << "fps";
+        auto dqduration = std::chrono::duration_cast<std::chrono::microseconds>(dqtime - start);
+        auto decompduration = std::chrono::duration_cast<std::chrono::microseconds>(decomptime - dqtime);
+        auto extractduration = std::chrono::duration_cast<std::chrono::microseconds>(extracttime - decomptime);
+        auto procduration = std::chrono::duration_cast<std::chrono::microseconds>(proctime - extracttime);
+        auto writeduration = std::chrono::duration_cast<std::chrono::microseconds>(writetime - proctime);
+        auto queueduration = std::chrono::duration_cast<std::chrono::microseconds>(stop - writetime);
+        auto totalduration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+        dqtimeAverager.add(dqduration.count());
+        decomptimeAverager.add(decompduration.count());
+        extracttimeAverager.add(extractduration.count());
+        proctimeAverager.add(procduration.count());
+        writetimeAverager.add(writeduration.count());
+        queuedurationAverager.add(queueduration.count());
+        totaldurationAverager.add(totalduration.count());
+        std::cout << "\r\033[Kdq: " << dqtimeAverager.getAverage() << "us \t| decomp: " << decomptimeAverager.getAverage() << "us\t | extract: " << extracttimeAverager.getAverage() << "us\t | proc: " << proctimeAverager.getAverage() << "us\t | write: " << writetimeAverager.getAverage() << "us\t | queue: " << queuedurationAverager.getAverage() << "us\t | total: " << totaldurationAverager.getAverage() << "us / " << 1000000 / totaldurationAverager.getAverage() << "fps               ";
         std::cout.flush();
     }
 
