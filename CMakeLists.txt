@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(lhf-tvb)
+project(ambilight)
 include(FindLibJpegTurbo.cmake)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native")
@@ -19,6 +19,6 @@ set(SOURCES
 )
 
 
-add_executable(lhf-tvb ${SOURCES})
-target_include_directories(lhf-tvb PRIVATE ${TurboJPEG_INCLUDE_DIRS})
-target_link_libraries(lhf-tvb ${TurboJPEG_LIBRARIES})
+add_executable(ambilight ${SOURCES})
+target_include_directories(ambilight PRIVATE ${TurboJPEG_INCLUDE_DIRS})
+target_link_libraries(ambilight ${TurboJPEG_LIBRARIES})
