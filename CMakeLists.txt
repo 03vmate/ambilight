@@ -12,7 +12,9 @@ set(SOURCES
         SerialPort.cpp
         SerialPort.hpp
         v4l2mode.hpp
+        v4l2mode.cpp
         networkmode.hpp
+        networkmode.cpp
         averager.h
 )
 
