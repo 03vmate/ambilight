@@ -135,6 +135,8 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
     double gamma = std::stod(config["gamma_correction"]);
     int buffer_count = std::stoi(config["v4l2_buffer_count"]);
     int baudrate = std::stoi(config["baud"]);
+    int sleep_after = std::stoi(config["sleep_after"]);
+    int averaging_samples = std::stoi(config["averaging_samples"]);
 
     // Initialize serial port
     SerialPort mcu = SerialPort();
@@ -236,6 +238,11 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
 
     // Buffer for holding the LED rgb data to send to MCU
     uint8_t* leddata = new uint8_t[(horizontal_leds + vertical_leds) * 2 * 3];
+    uint32_t** leddata_avg = new uint32_t*[averaging_samples];
+    for(int i = 0; i < averaging_samples; i++) {
+        leddata_avg[i] = new uint32_t[(horizontal_leds + vertical_leds) * 2 * 3];
+    }
+    size_t leddata_avg_pos = 0;
 
     Averager<int64_t> dqtimeAverager(20);
     Averager<int64_t> decomptimeAverager(20);
@@ -244,6 +251,9 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
     Averager<int64_t> writetimeAverager(20);
     Averager<int64_t> queuedurationAverager(20);
     Averager<int64_t> totaldurationAverager(20);
+
+    int blank_count = 0;
+    bool sleep_now = false;
 
     while (v4l2_run) {
         auto start = std::chrono::high_resolution_clock::now();
@@ -327,18 +337,52 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
 
         auto extracttime = std::chrono::high_resolution_clock::now();
 
-        // \n is special, as it is used for the end of the message. Replace data in LED colors with the closest brightness that is not \n. Also perform gamma correction.
+        bool blank = true;
         for(int i = 0; i < (horizontal_leds + vertical_leds) * 2 * 3; i++) {
+            //Do averaging, if enabled
+            if(averaging_samples > 1) {
+                leddata_avg[leddata_avg_pos][i] = leddata[i];
+                uint32_t sum = 0;
+                for(int j = 0; j < averaging_samples; j++) {
+                    sum += leddata_avg[j][i];
+                }
+                leddata[i] = sum / averaging_samples;
+            }
+
             leddata[i] = gammaCorrection(leddata[i], gamma);
+
+            // \n is special, as it is used for the end of the message. Replace data in LED colors with the closest brightness that is not \n.
             if(leddata[i] == '\n') {
                 leddata[i] -= 1;
             }
+            if(leddata[i] != 0) {
+                blank = false;
+            }
+        }
+
+        //Advance averaging buffer position
+        if(averaging_samples > 1) {
+            leddata_avg_pos++;
+            //Reset averaging buffer position if it has reached the end
+            if(leddata_avg_pos >= averaging_samples) {
+                leddata_avg_pos = 0;
+            }
+        }
+
+        // Slow down on blank
+        if(blank) {
+            blank_count++;
+            if(blank_count >= sleep_after) {
+                blank_count = sleep_after; //prevent overflow
+                sleep_now = true;
+            }
+        }
+        else {
+            blank_count = 0;
+            sleep_now = false;
         }
 
         auto proctime = std::chrono::high_resolution_clock::now();
-
-
-        
 
         // Send data
         mcu.write(reinterpret_cast<const char*>(leddata), (horizontal_leds + vertical_leds) * 2 * 3);
@@ -366,8 +410,18 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
         writetimeAverager.add(writeduration.count());
         queuedurationAverager.add(queueduration.count());
         totaldurationAverager.add(totalduration.count());
-        std::cout << "\r\033[Kdq: " << dqtimeAverager.getAverage() << "us \t| decomp: " << decomptimeAverager.getAverage() << "us\t | extract: " << extracttimeAverager.getAverage() << "us\t | proc: " << proctimeAverager.getAverage() << "us\t | write: " << writetimeAverager.getAverage() << "us\t | queue: " << queuedurationAverager.getAverage() << "us\t | total: " << totaldurationAverager.getAverage() << "us / " << 1000000 / totaldurationAverager.getAverage() << "fps               ";
+        std::cout << "\r\033[Kdq: " << dqtimeAverager.getAverage() << "us \t| decomp: " << decomptimeAverager.getAverage() << "us\t | extract: " << extracttimeAverager.getAverage() << "us\t | proc: " << proctimeAverager.getAverage() << "us\t | write: " << writetimeAverager.getAverage() << "us\t | queue: " << queuedurationAverager.getAverage() << "us\t | total: " << totaldurationAverager.getAverage() << "us / " << 1000000 / totaldurationAverager.getAverage() << "fps";
+        if(sleep_now) {
+            std::cout << "  SLEEPING     ";
+        }
+        else {
+            std::cout << "               ";
+        }
         std::cout.flush();
+
+        if(sleep_now) {
+            usleep(1000000); //sleep for 1 second, slowing down to ~1 FPS
+        }
     }
 
     std::cout << "Stopping" << std::endl;
