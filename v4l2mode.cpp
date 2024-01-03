@@ -13,6 +13,7 @@
 #include <complex>
 #include "SerialPort.hpp"
 #include "averager.h"
+#include "colorOfBlock.hpp"
 
 bool v4l2_run = true;
 
