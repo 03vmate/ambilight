@@ -11,7 +11,7 @@
 #include <cstring>
 #include <chrono>
 #include <complex>
-#include "SerialPort.hpp
+#include "SerialPort.hpp"
 #include "averager.h"
 
 bool v4l2_run = true;
