@@ -4,6 +4,11 @@
 #include <iostream>
 
 int main(int argc, char** argv) {
+#ifdef __AVX2__
+    std::cout << "Using AVX2 optimizations" << std::endl;
+#elif __SSE2__
+    std::cout << "Using SSE2 optimizations" << std::endl;
+#endif
     if (argc != 2) {
         std::cout << "Usage: " << argv[0] << " <config file>" << std::endl;
         return -1;
