@@ -11,6 +11,8 @@ set(SOURCES
         simpleConfigParser.h
         SerialPort.cpp
         SerialPort.hpp
+        colorOfBlock.hpp
+        colorOfBlock.cpp
         v4l2mode.hpp
         v4l2mode.cpp
         networkmode.hpp
