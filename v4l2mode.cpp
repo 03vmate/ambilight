@@ -189,8 +189,13 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
         if(header_result == -1) {
             std::cout << "Error decompressing header, fetching new buffer" << std::endl;
             // Queue buffer
+            int err_counter = 0;
             while (ioctl(fd, VIDIOC_QBUF, &buf) == -1) {
                 std::cout << "Error queuing buffer" << std::endl;
+                err_counter++;
+                if(err_counter > 100) {
+                    exit(1);
+                }
             }
             continue;
         }
