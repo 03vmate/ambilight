@@ -12,7 +12,7 @@ In network mode, a message sent over TCP contains the desired color/brightness f
 Communication with the LED strip occurs through a microcontroller, which communicates with the LEDs based on commands received via UART/serial port. PlatformIO is required for MCU firmware build.
 
 # Config
-| Paraméter        | Mode         | Leírás                               |
+| Parameter        | Mode         | Description                               |
 |------------------|--------------|--------------------------------------|
 | `mode`           | v4l2/network | `network` or `v4l2` (HDMI capture)   |
 | `serial_port`    | v4l2/network | Path to serial port of MCU           |
