@@ -81,3 +81,5 @@ void ArrayAverager<T>::getAverage(T* average) {
 }
 
 template class ArrayAverager<uint8_t>;
+template void ArrayAverager<uint8_t>::getAverage<uint64_t>(uint8_t*);
+
