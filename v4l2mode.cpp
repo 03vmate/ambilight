@@ -160,22 +160,32 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
 
         auto extracttime = std::chrono::high_resolution_clock::now();
 
-        bool blank = true;
+        // Do gamma correction
         for(int i = 0; i < (horizontal_leds + vertical_leds) * 2 * 3; i++) {
             leddata[i] = gammaCorrection(leddata[i], gamma);
-
-            // \n is special, as it is used for the end of the message. Replace data in LED colors with the closest brightness that is not \n.
-            if(leddata[i] == '\n') {
-                leddata[i] -= 1;
-            }
-            if(leddata[i] != 0) {
-                blank = false;
-            }
         }
 
         leddataAverager.add(leddata);
 
+        auto proctime = std::chrono::high_resolution_clock::now();
+
+        // Send data
+        uint8_t* leddata_avg = new uint8_t[ledCount];
+        leddataAverager.getAverage(leddata_avg);
+
         // Slow down on blank
+        bool blank = true;
+        for(int i = 0; i < ledCount; i++) {
+            // \n is special, as it is used for the end of the message. Replace data in LED colors with the closest brightness that is not \n.
+            if(leddata_avg[i] == '\n') {
+                leddata_avg[i] -= 1;
+            }
+            // Check if the data is not blank for sleep detection
+            if(leddata_avg[i] != 0) {
+                blank = false;
+            }
+        }
+
         if(blank) {
             blank_count++;
             if(blank_count >= sleep_after) {
@@ -187,12 +197,6 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
             blank_count = 0;
             sleep_now = false;
         }
-
-        auto proctime = std::chrono::high_resolution_clock::now();
-
-        // Send data
-        uint8_t* leddata_avg = new uint8_t[ledCount];
-        leddataAverager.getAverage(leddata_avg);
 
         mcu.write(reinterpret_cast<const char *>(leddata_avg), ledCount);
         mcu.write('\n');

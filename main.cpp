@@ -5,7 +5,11 @@
 #include "v4l2mode.hpp"
 #include "networkmode.hpp"
 
+#include "ArrayAverager.h"
+
 int main(int argc, char** argv) {
+
+
     // Check arguments
     if (argc != 2) {
         std::cout << "Usage: " << argv[0] << " <config file>" << std::endl;
