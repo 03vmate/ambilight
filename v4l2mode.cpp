@@ -1,23 +1,17 @@
-#include "v4l2mode.hpp"
 #include <unistd.h>
 #include <turbojpeg.h>
 #include <csignal>
-#include <cstdio>
 #include <iostream>
-#include <cstring>
 #include <chrono>
 #include <complex>
 #include "SerialPort.hpp"
-#include "averager.h"
+#include "Averager.h"
 #include "colorOfBlock.hpp"
 #include "V4L2Capture.h"
+#include "v4l2mode.hpp"
+#include "ArrayAverager.h"
 
 bool v4l2_run = true;
-
-struct buffer {
-    void* start;
-    size_t length;
-};
 
 void v4l2_sighandler(int signum) {
     std::cout << "Caught signal " << signum << ", exiting" << std::endl;
@@ -34,19 +28,19 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
     signal(SIGINT, v4l2_sighandler);
 
     // Parse config
-    int vertical_leds = std::stoi(config["vertical_leds"]);
-    int horizontal_leds = std::stoi(config["horizontal_leds"]);
-    int border_size = std::stoi(config["border_size"]);
-    int capture_width = std::stoi(config["capture_width"]);
-    int capture_height = std::stoi(config["capture_height"]);
-    int capture_fps = std::stoi(config["capture_fps"]);
-    float column_block_height = (float)capture_height / (float)vertical_leds;
-    float row_block_width = (float)capture_width / (float)horizontal_leds;
-    double gamma = std::stod(config["gamma_correction"]);
-    int buffer_count = std::stoi(config["v4l2_buffer_count"]);
-    int baudrate = std::stoi(config["baud"]);
-    int sleep_after = std::stoi(config["sleep_after"]);
-    int averaging_samples = std::stoi(config["averaging_samples"]);
+    const int vertical_leds = std::stoi(config["vertical_leds"]);
+    const int horizontal_leds = std::stoi(config["horizontal_leds"]);
+    const int border_size = std::stoi(config["border_size"]);
+    const int capture_width = std::stoi(config["capture_width"]);
+    const int capture_height = std::stoi(config["capture_height"]);
+    const int capture_fps = std::stoi(config["capture_fps"]);
+    const float column_block_height = (float)capture_height / (float)vertical_leds;
+    const float row_block_width = (float)capture_width / (float)horizontal_leds;
+    const double gamma = std::stod(config["gamma_correction"]);
+    const int buffer_count = std::stoi(config["v4l2_buffer_count"]);
+    const int baudrate = std::stoi(config["baud"]);
+    const int sleep_after = std::stoi(config["sleep_after"]);
+    const int averaging_samples = std::stoi(config["averaging_samples"]);
 
     // Initialize serial port
     SerialPort mcu = SerialPort(config["serial_port"], baudrate);
@@ -60,13 +54,13 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
     // Buffer for holding the decoded rgb data
     unsigned char *rgbBuffer = nullptr;
 
+
+    const size_t ledCount = (horizontal_leds + vertical_leds) * 2 * 3;
+
     // Buffer for holding the LED rgb data to send to MCU
-    uint8_t* leddata = new uint8_t[(horizontal_leds + vertical_leds) * 2 * 3];
-    uint32_t** leddata_avg = new uint32_t*[averaging_samples];
-    for(int i = 0; i < averaging_samples; i++) {
-        leddata_avg[i] = new uint32_t[(horizontal_leds + vertical_leds) * 2 * 3];
-    }
-    size_t leddata_avg_pos = 0;
+    uint8_t* leddata = new uint8_t[ledCount];
+
+    ArrayAverager<uint8_t> leddataAverager(averaging_samples, ledCount);
 
     Averager<int64_t> dqtimeAverager(20);
     Averager<int64_t> decomptimeAverager(20);
@@ -168,16 +162,6 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
 
         bool blank = true;
         for(int i = 0; i < (horizontal_leds + vertical_leds) * 2 * 3; i++) {
-            //Do averaging, if enabled
-            if(averaging_samples > 1) {
-                leddata_avg[leddata_avg_pos][i] = leddata[i];
-                uint32_t sum = 0;
-                for(int j = 0; j < averaging_samples; j++) {
-                    sum += leddata_avg[j][i];
-                }
-                leddata[i] = sum / averaging_samples;
-            }
-
             leddata[i] = gammaCorrection(leddata[i], gamma);
 
             // \n is special, as it is used for the end of the message. Replace data in LED colors with the closest brightness that is not \n.
@@ -189,14 +173,7 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
             }
         }
 
-        //Advance averaging buffer position
-        if(averaging_samples > 1) {
-            leddata_avg_pos++;
-            //Reset averaging buffer position if it has reached the end
-            if(leddata_avg_pos >= averaging_samples) {
-                leddata_avg_pos = 0;
-            }
-        }
+        leddataAverager.add(leddata);
 
         // Slow down on blank
         if(blank) {
@@ -214,8 +191,12 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
         auto proctime = std::chrono::high_resolution_clock::now();
 
         // Send data
-        mcu.write(reinterpret_cast<const char*>(leddata), (horizontal_leds + vertical_leds) * 2 * 3);
-        mcu.write("\n", 1);
+        uint8_t* leddata_avg = new uint8_t[ledCount];
+        leddataAverager.getAverage(leddata_avg);
+
+        mcu.write(reinterpret_cast<const char *>(leddata_avg), ledCount);
+        mcu.write('\n');
+        mcu.flush();
 
         auto writetime = std::chrono::high_resolution_clock::now();
 
@@ -235,6 +216,7 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
             }
         }
 
+        // Timing info output
         auto stop = std::chrono::high_resolution_clock::now();
         auto dqduration = std::chrono::duration_cast<std::chrono::microseconds>(dqtime - start);
         auto decompduration = std::chrono::duration_cast<std::chrono::microseconds>(decomptime - dqtime);
@@ -259,6 +241,7 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
         }
         std::cout.flush();
 
+        // Sleep if needed
         if(sleep_now) {
             usleep(1000000); //sleep for 1 second, slowing down to ~1 FPS
         }

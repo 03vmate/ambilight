@@ -17,10 +17,13 @@ set(SOURCES
         v4l2mode.cpp
         networkmode.hpp
         networkmode.cpp
-        averager.h
         ConfigParser.cpp
         V4L2Capture.cpp
         V4L2Capture.h
+        Averager.cpp
+        Averager.h
+        ArrayAverager.cpp
+        ArrayAverager.h
 )
 
 
