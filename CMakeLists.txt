@@ -19,6 +19,8 @@ set(SOURCES
         networkmode.cpp
         averager.h
         ConfigParser.cpp
+        V4L2Capture.cpp
+        V4L2Capture.h
 )
 
 

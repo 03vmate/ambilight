@@ -1,9 +1,5 @@
 #include "v4l2mode.hpp"
-#include <fcntl.h>
-#include <sys/ioctl.h>
 #include <unistd.h>
-#include <linux/videodev2.h>
-#include <sys/mman.h>
 #include <turbojpeg.h>
 #include <csignal>
 #include <cstdio>
@@ -14,6 +10,7 @@
 #include "SerialPort.hpp"
 #include "averager.h"
 #include "colorOfBlock.hpp"
+#include "V4L2Capture.h"
 
 bool v4l2_run = true;
 
@@ -54,90 +51,8 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
     // Initialize serial port
     SerialPort mcu = SerialPort(config["serial_port"], baudrate);
 
-    // Open capture device
-    int fd = open(config["capture_device"].c_str(), O_RDWR);
-    if (fd == -1) {
-        std::cout << "Error opening device" << std::endl;
-        exit(1);
-    }
-
-    // Query device capabilities
-    struct v4l2_capability cap;
-    if(ioctl(fd, VIDIOC_QUERYCAP, &cap) == -1) {
-        std::cout << "Error querying device" << std::endl;
-        exit(1);
-    }
-    std::cout << "Driver: " << cap.driver << std::endl;
-    std::cout << "Card: " << cap.card << std::endl;
-    std::cout << "Bus Info: " << cap.bus_info << std::endl;
-    std::cout << "Version: " << ((cap.version >> 16) & 0xFF) << "." << ((cap.version >> 8) & 0xFF) << "." << (cap.version & 0xFF) << std::endl;
-
-    // Set capture format
-    struct v4l2_format format;
-    format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    format.fmt.pix.width = capture_width;
-    format.fmt.pix.height = capture_height;
-    format.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG;
-    format.fmt.pix.field = V4L2_FIELD_NONE;
-    if(ioctl(fd, VIDIOC_S_FMT, &format) == -1) {
-        std::cout << "Error setting format" << std::endl;
-        exit(1);
-    }
-
-    // Set frame rate
-    struct v4l2_streamparm fps;
-    memset(&fps, 0, sizeof(fps));
-    fps.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    fps.parm.capture.timeperframe.numerator = 1;
-    fps.parm.capture.timeperframe.denominator = capture_fps; //FPS = denominator / numerator
-    if (ioctl(fd, VIDIOC_S_PARM, &fps) == -1) {
-        std::cout << "Error setting frame rate" << std::endl;
-        exit(1);
-    }
-
-    // Request buffer
-    struct v4l2_requestbuffers req;
-    req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    req.memory = V4L2_MEMORY_MMAP;
-    req.count = 4;
-    if(ioctl(fd, VIDIOC_REQBUFS, &req) == -1) {
-        std::cout << "Error requesting buffer" << std::endl;
-        exit(1);
-    }
-
-    // Map buffer
-    buffer buffers[buffer_count];
-    for(int i = 0; i < buffer_count; i++) {
-        struct v4l2_buffer buf;
-        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-        buf.memory = V4L2_MEMORY_MMAP;
-        buf.index = i;
-        if(ioctl(fd, VIDIOC_QUERYBUF, &buf) == -1) {
-            std::cout << "Error querying buffer" << std::endl;
-            exit(1);
-        }
-        buffers[i].length = buf.length;
-        buffers[i].start = mmap(NULL, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, buf.m.offset);
-    }
-
-    // Queue buffer
-    for(int i = 0; i < buffer_count; i++) {
-        struct v4l2_buffer buf;
-        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-        buf.memory = V4L2_MEMORY_MMAP;
-        buf.index = i;
-        if(ioctl(fd, VIDIOC_QBUF, &buf) == -1) {
-            std::cout << "Error queueing buffer" << std::endl;
-            exit(1);
-        }
-    }
-
-    // Start streaming
-    enum v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    if(ioctl(fd, VIDIOC_STREAMON, &type) == -1) {
-        std::cout << "Error starting stream" << std::endl;
-        exit(1);
-    }
+    // Open v4l2 device
+    V4L2Capture v4l2Capture(config["capture_device"], capture_width, capture_height, capture_fps, buffer_count);
 
     // Create JPEG decompressor
     tjhandle tjhandle = tjInitDecompress();
@@ -168,29 +83,29 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
         auto start = std::chrono::high_resolution_clock::now();
 
         // Dequeue buffer
-        v4l2_buffer buf = {};
-        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-        buf.memory = V4L2_MEMORY_MMAP;
-        if (ioctl(fd, VIDIOC_DQBUF, &buf) == -1) {
-            std::cout << "Error dequeueing buffer" << std::endl;
-            exit(1);
-        }
-
+        const V4L2Buffer& buf = v4l2Capture.dequeueBuffer();
         auto dqtime = std::chrono::high_resolution_clock::now();
-
 
         // Decompress header
         int width, height, jpegsubsamp, jpegcolorspace;
-        int header_result = tjDecompressHeader3(tjhandle, static_cast<unsigned char*>(buffers[buf.index].start), buffers[buf.index].length, &width, &height, &jpegsubsamp, &jpegcolorspace);
+        int header_result = tjDecompressHeader3(tjhandle, static_cast<unsigned char*>(buf.get_ptr()), buf.get_length(), &width, &height, &jpegsubsamp, &jpegcolorspace);
+
+        // If decompression failed, requeue the buffer and start over
         if(header_result == -1) {
             std::cout << "Error decompressing header, fetching new buffer" << std::endl;
             // Queue buffer
-            int err_counter = 0;
-            while (ioctl(fd, VIDIOC_QBUF, &buf) == -1) {
-                std::cout << "Error queuing buffer" << std::endl;
-                err_counter++;
-                if(err_counter > 100) {
-                    exit(1);
+            int retry_count = 0;
+            while(true) {
+                try {
+                    v4l2Capture.queueBuffer(buf);
+                    break;
+                }
+                catch(const std::runtime_error& e) {
+                    std::cout << "Error queuing buffer: " << e.what() << ", retrying..." << std::endl;
+                }
+                retry_count++;
+                if(retry_count > 10) {
+                    throw std::runtime_error("Failed to queue buffer after 10 retries");
                 }
             }
             continue;
@@ -202,7 +117,7 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
         }
 
         // Decompress jpeg
-        tjDecompress2(tjhandle, static_cast<unsigned char*>(buffers[buf.index].start), buffers[buf.index].length, rgbBuffer, width, 0, height, TJPF_RGB, 0);
+        tjDecompress2(tjhandle, static_cast<unsigned char*>(buf.get_ptr()), buf.get_length(), rgbBuffer, width, 0, height, TJPF_RGB, 0);
 
         auto decomptime = std::chrono::high_resolution_clock::now();
 
@@ -305,8 +220,19 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
         auto writetime = std::chrono::high_resolution_clock::now();
 
         // Queue buffer
-        while (ioctl(fd, VIDIOC_QBUF, &buf) == -1) {
-            std::cout << "Error queuing buffer" << std::endl;
+        int retry_count = 0;
+        while(true) {
+            try {
+                v4l2Capture.queueBuffer(buf);
+                break;
+            }
+            catch(const std::runtime_error& e) {
+                std::cout << "Error queuing buffer: " << e.what() << ", retrying..." << std::endl;
+            }
+            retry_count++;
+            if(retry_count > 10) {
+                throw std::runtime_error("Failed to queue buffer after 10 retries");
+            }
         }
 
         auto stop = std::chrono::high_resolution_clock::now();
@@ -341,18 +267,4 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
     std::cout << "Stopping" << std::endl;
 
     delete[] rgbBuffer;
-
-    // Stop streaming
-    if(ioctl(fd, VIDIOC_STREAMOFF, &type) == -1) {
-        std::cout << "Error stopping stream" << std::endl;
-        exit(1);
-    }
-
-    // Unmap buffers
-    for (int i = 0; i < buffer_count; ++i) {
-        munmap(buffers[i].start, buffers[i].length);
-    }
-
-    // Close v4l2 device
-    close(fd);
 }
