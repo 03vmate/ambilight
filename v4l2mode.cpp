@@ -57,11 +57,13 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
 
     const size_t ledCount = (horizontal_leds + vertical_leds) * 2 * 3;
 
-    // Buffer for holding the LED rgb data to send to MCU
+    // Buffer to hold LED data for the current frame
     uint8_t* leddata = new uint8_t[ledCount];
 
+    // Averager for LED data
     ArrayAverager<uint8_t> leddataAverager(averaging_samples, ledCount);
 
+    // Averagers for timing debug info
     Averager<int64_t> dqtimeAverager(20);
     Averager<int64_t> decomptimeAverager(20);
     Averager<int64_t> extracttimeAverager(20);
@@ -70,6 +72,7 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
     Averager<int64_t> queuedurationAverager(20);
     Averager<int64_t> totaldurationAverager(20);
 
+    // Sleep mode related variables
     int blank_count = 0;
     bool sleep_now = false;
 
@@ -87,7 +90,7 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
         // If decompression failed, requeue the buffer and start over
         if(header_result == -1) {
             std::cout << "Error decompressing header, fetching new buffer" << std::endl;
-            // Queue buffer
+            // Try to requeue a few times
             int retry_count = 0;
             while(true) {
                 try {
@@ -105,7 +108,7 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
             continue;
         }
 
-        // First time running, allocate buffer for decoded rgb data
+        // First time running, allocate buffer for decoded rgb data. Needs to be done after the first frame is captured, as we don't know the size of the image before the JPEG header is parsed.
         if(rgbBuffer == nullptr) {
             rgbBuffer = new unsigned char[width * height * 3 + 16]; //extra padding for the end, to prevent segfaults when using some SIMD optimizations (see comments in simdblock())
         }
@@ -167,13 +170,11 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
 
         leddataAverager.add(leddata);
 
-        auto proctime = std::chrono::high_resolution_clock::now();
-
-        // Send data
+        // Get averaged data
         uint8_t* leddata_avg = new uint8_t[ledCount];
         leddataAverager.getAverage<uint64_t>(leddata_avg); // Use uint64_t for summing internally to prevent overflow
 
-        // Slow down on blank
+        // Detect if blank and replace newlines(special delimiter)
         bool blank = true;
         for(int i = 0; i < ledCount; i++) {
             // \n is special, as it is used for the end of the message. Replace data in LED colors with the closest brightness that is not \n.
@@ -198,6 +199,9 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
             sleep_now = false;
         }
 
+        auto proctime = std::chrono::high_resolution_clock::now();
+
+        // Send data to MCU
         mcu.write(reinterpret_cast<const char *>(leddata_avg), ledCount);
         mcu.write('\n');
         mcu.flush();
