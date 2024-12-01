@@ -123,41 +123,37 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
         for(int i = vertical_leds - 1; i >= 0; i--) {
             int block_top = i * column_block_height;
             int block_left = capture_width - border_size;
-            uint8_t* color = colorOfBlock(rgbBuffer.get(), width, height, block_left, block_top, border_size, (int)column_block_height);
-            leddata[leddata_index++] = color[0];
-            leddata[leddata_index++] = color[1];
-            leddata[leddata_index++] = color[2];
-            delete[] color;
+            auto color = colorOfBlock(rgbBuffer.get(), width, height, block_left, block_top, border_size, (int)column_block_height);
+            leddata[leddata_index++] = std::get<0>(color);
+            leddata[leddata_index++] = std::get<1>(color);
+            leddata[leddata_index++] = std::get<2>(color);
         }
         //top row, right to left
         for(int i = horizontal_leds - 1; i >= 0; i--) {
             int block_top = 0;
             int block_left = i * row_block_width;
-            uint8_t* color = colorOfBlock(rgbBuffer.get(), width, height, block_left, block_top, (int)row_block_width, border_size);
-            leddata[leddata_index++] = color[0];
-            leddata[leddata_index++] = color[1];
-            leddata[leddata_index++] = color[2];
-            delete[] color;
+            auto color = colorOfBlock(rgbBuffer.get(), width, height, block_left, block_top, (int)row_block_width, border_size);
+            leddata[leddata_index++] = std::get<0>(color);
+            leddata[leddata_index++] = std::get<1>(color);
+            leddata[leddata_index++] = std::get<2>(color);
         }
         //left column, top to bottom
         for(int i = 0; i < vertical_leds; i++) {
             int block_top = i * column_block_height;
             int block_left = 0;
-            uint8_t* color = colorOfBlock(rgbBuffer.get(), width, height, block_left, block_top, border_size, (int)column_block_height);
-            leddata[leddata_index++] = color[0];
-            leddata[leddata_index++] = color[1];
-            leddata[leddata_index++] = color[2];
-            delete[] color;
+            auto color = colorOfBlock(rgbBuffer.get(), width, height, block_left, block_top, border_size, (int)column_block_height);
+            leddata[leddata_index++] = std::get<0>(color);
+            leddata[leddata_index++] = std::get<1>(color);
+            leddata[leddata_index++] = std::get<2>(color);
         }
         //bottom row, left to right
         for(int i = 0; i < horizontal_leds; i++) {
             int block_top = capture_height - border_size;
             int block_left = i * row_block_width;
-            uint8_t* color = colorOfBlock(rgbBuffer.get(), width, height, block_left, block_top, (int)row_block_width, border_size);
-            leddata[leddata_index++] = color[0];
-            leddata[leddata_index++] = color[1];
-            leddata[leddata_index++] = color[2];
-            delete[] color;
+            auto color = colorOfBlock(rgbBuffer.get(), width, height, block_left, block_top, (int)row_block_width, border_size);
+            leddata[leddata_index++] = std::get<0>(color);
+            leddata[leddata_index++] = std::get<1>(color);
+            leddata[leddata_index++] = std::get<2>(color);
         }
 
         auto extracttime = std::chrono::high_resolution_clock::now();

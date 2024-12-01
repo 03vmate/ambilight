@@ -3,7 +3,7 @@
 #include <immintrin.h>
 
 //Calculate average color of a rectangle
-uint8_t* colorOfBlock(const uint8_t* img, int imgwidth, int imgheight, int x, int y, int width, int height) {
+std::tuple<uint8_t, uint8_t, uint8_t> colorOfBlock(const uint8_t* img, int imgwidth, int imgheight, int x, int y, int width, int height) {
     //If the width is odd, make it even. One of the SIMD optimizations requires this, but do it for all of them to be consistent.
     if(width % 2 == 1) {
         if(width > 1) {
@@ -21,18 +21,17 @@ uint8_t* colorOfBlock(const uint8_t* img, int imgwidth, int imgheight, int x, in
     for(int ypos = y; ypos < y + height; ypos++) {
         for(int xpos = x; xpos < x + width; xpos += 2) {
             int index = (ypos * imgwidth + xpos) * 3;
-            __m128i p = _mm_loadu_si128((__m128i*)&img[index]); //load next 16 subpixels into 16x 8bit registers. Only the next 6 are needed. If we are at the very bottom right of the image, this may try to load values outside of the image. To prevent segfaults, 16 bytes of padding is also allocated after the image data ends.
+            __m128i p = _mm_loadu_si128((__m128i*)&img[index]); //load next 16 subpixels into 16x 8bit registers. Only the next 6 are needed. If we are at the very bottom right of the image, this may try to load values outside the image. To prevent segfaults, 16 bytes of padding is also allocated after the image data ends.
             __m256i q = _mm256_cvtepu8_epi32(p); //convert 8bit registers to 32bit registers, throwing away the upper 8 values. This will leave us with 8 32bit registers, the last 2 of which are unused.
             sum = _mm256_add_epi32(sum, q);
         }
     }
     int32_t result[8];
     _mm256_storeu_si256((__m256i*)result, sum);
-    uint8_t *result_byte = new uint8_t[3];
-    result_byte[0] = (result[0] + result[3]) / numOfPixels;
-    result_byte[1] = (result[1] + result[4]) / numOfPixels;
-    result_byte[2] = (result[2] + result[5]) / numOfPixels;
-    return result_byte;
+    uint8_t b0 = (result[0] + result[3]) / numOfPixels;
+    uint8_t b1 = (result[1] + result[4]) / numOfPixels;
+    uint8_t b2 = (result[2] + result[5]) / numOfPixels;
+    return std::make_tuple(b0, b1, b2);
 #elif __SSE2__
     if(width >= 512) {
         //use a 128 bit SIMD register containing 4 32 bit integers. The first 3 are used for R,G,B sums, the fourth is unused.
@@ -48,11 +47,10 @@ uint8_t* colorOfBlock(const uint8_t* img, int imgwidth, int imgheight, int x, in
 
         int32_t result[4];
         _mm_storeu_si128((__m128i*)result, sum);
-        uint8_t *result_byte = new uint8_t[3];
-        result_byte[0] = result[0] / numOfPixels;
-        result_byte[1] = result[1] / numOfPixels;
-        result_byte[2] = result[2] / numOfPixels;
-        return result_byte;
+        uint8_t b0 = result[0] / numOfPixels;
+        uint8_t b1 = result[1] / numOfPixels;
+        uint8_t b2 = result[2] / numOfPixels;
+        return std::make_tuple(b0, b1, b2);
     }
     else {
         //use a 128 bit SIMD register containing 8 16bit integers. The sum of even R,G,B pixels is in the first 3 uint16s, the sum of odd R,G,B pixels is in the following 3 uint16s, and the remaining 2 uint16s are unused.
@@ -75,11 +73,11 @@ uint8_t* colorOfBlock(const uint8_t* img, int imgwidth, int imgheight, int x, in
             sum[1] += rowsum_result[4];
             sum[2] += rowsum_result[5];
         }
-        uint8_t *result_byte = new uint8_t[3];
-        result_byte[0] = sum[0] / numOfPixels;
-        result_byte[1] = sum[1] / numOfPixels;
-        result_byte[2] = sum[2] / numOfPixels;
-        return result_byte;
+
+        uint8_t b0 = sum[0] / numOfPixels;
+        uint8_t b1 = sum[1] / numOfPixels;
+        uint8_t b2 = sum[2] / numOfPixels;
+        return std::make_tuple(b0, b1, b2);
     }
 #else
     uint32_t color[] = {0,0,0};
@@ -102,5 +100,4 @@ uint8_t* colorOfBlock(const uint8_t* img, int imgwidth, int imgheight, int x, in
     return color_byte;
     }
 #endif
-    return nullptr;
 }
