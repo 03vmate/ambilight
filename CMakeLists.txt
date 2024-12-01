@@ -26,7 +26,7 @@ set(SOURCES
         ArrayAverager.h
 )
 
-
+add_compile_options("-Wall" "-Wextra" "-Wpedantic" "-Werror")
 add_executable(ambilight ${SOURCES})
 target_include_directories(ambilight PRIVATE ${TurboJPEG_INCLUDE_DIRS})
 target_link_libraries(ambilight ${TurboJPEG_LIBRARIES})

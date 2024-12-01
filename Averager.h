@@ -3,9 +3,9 @@
 
 template <typename T>
 class Averager {
-    std::unique_ptr<T[]> sum;
     int pos;
     int sampleSize;
+    std::unique_ptr<T[]> sum;
 public:
     explicit Averager(int sampleSize);
     Averager(const Averager& other);

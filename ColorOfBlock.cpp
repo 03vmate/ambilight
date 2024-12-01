@@ -5,7 +5,7 @@
 template <typename SIMDType>
 struct ColorOfBlockImpl {
     static std::tuple<uint8_t, uint8_t, uint8_t> calculate(
-            const uint8_t* img, int imgwidth, int imgheight, int x, int y, int width, int height) {
+            const uint8_t* img, int imgwidth, int imgheight __attribute__((unused)), int x, int y, int width, int height) {
 
         //If the width is odd, make it even. One of the SIMD optimizations requires this, but do it for all of them to be consistent.
         if (width % 2 == 1) {
@@ -38,7 +38,7 @@ struct ColorOfBlockImpl {
 template <>
 struct ColorOfBlockImpl<AVX2> {
     static std::tuple<uint8_t, uint8_t, uint8_t> calculate(
-            const uint8_t* img, int imgwidth, int imgheight, int x, int y, int width, int height) {
+            const uint8_t* img, int imgwidth, int imgheight __attribute__((unused)), int x, int y, int width, int height) {
 
         if (width % 2 == 1) {
             if (width > 1) width -= 1;
@@ -70,7 +70,7 @@ struct ColorOfBlockImpl<AVX2> {
 template <>
 struct ColorOfBlockImpl<SSE2> {
     static std::tuple<uint8_t, uint8_t, uint8_t> calculate(
-            const uint8_t* img, int imgwidth, int imgheight, int x, int y, int width, int height) {
+            const uint8_t* img, int imgwidth, int imgheight __attribute__((unused)), int x, int y, int width, int height) {
 
         if (width % 2 == 1) {
             if (width > 1) width -= 1;

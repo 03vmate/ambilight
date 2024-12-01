@@ -70,7 +70,7 @@ void NetworkMode::start(std::map<std::string, std::string> config) {
                 }
                 else {
                     ledBuf[ledBufPos++] = receiveBuf[i];
-                    if(ledBufPos >= dataCount * 2 - 1) {
+                    if(static_cast<size_t>(ledBufPos) >= static_cast<size_t>(dataCount * 2 - 1)) {
                         ledBufPos = 0;
                     }
                 }

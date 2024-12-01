@@ -2,7 +2,7 @@
 #include "Averager.h"
 
 template <typename T>
-Averager<T>::Averager(int sampleSize) : sampleSize(sampleSize), pos(0) {
+Averager<T>::Averager(int sampleSize) : pos(0), sampleSize(sampleSize) {
     if (sampleSize <= 0) {
         throw std::invalid_argument("sampleSize must be greater than 0");
     }

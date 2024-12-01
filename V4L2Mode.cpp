@@ -181,7 +181,7 @@ void V4L2Mode::start(std::map<std::string, std::string> config) {
 
         // Detect if blank and replace newlines(special delimiter)
         bool blank = true;
-        for(int i = 0; i < ledCount; i++) {
+        for(size_t i = 0; i < ledCount; i++) {
             // \n is special, as it is used for the end of the message. Replace data in LED colors with the closest brightness that is not \n.
             if(ledDataAvg[i] == '\n') {
                 ledDataAvg[i] -= 1;

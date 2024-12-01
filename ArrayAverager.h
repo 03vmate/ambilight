@@ -3,11 +3,10 @@
 
 template <typename T>
 class ArrayAverager {
-    std::vector<T> sum;
-    size_t pos;
     size_t sampleSize;
     size_t arraySize;
-
+    size_t pos;
+    std::vector<T> sum;
 public:
     ArrayAverager(size_t sampleSize, size_t arraySize);
     ArrayAverager(const ArrayAverager& other);

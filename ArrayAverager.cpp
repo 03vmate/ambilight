@@ -51,7 +51,7 @@ ArrayAverager<T>& ArrayAverager<T>::operator=(ArrayAverager&& other) noexcept {
 
 template <typename T>
 void ArrayAverager<T>::add(const T* array) {
-    for (int i = 0; i < arraySize; ++i) {
+    for (size_t i = 0; i < arraySize; ++i) {
         sum[pos * arraySize + i] = array[i];
     }
     pos++;
@@ -63,19 +63,16 @@ void ArrayAverager<T>::add(const T* array) {
 template <typename T>
 template <typename T2> // Type of summing array - double would be almost universally appropriate, but it's slow
 void ArrayAverager<T>::getAverage(T* average) {
-    T2 temp[arraySize];
-    for (int i = 0; i < arraySize; ++i) {
-        temp[i] = 0;
-    }
+    std::vector<T2> temp(arraySize, T2(0));
 
     // Sum all the values
-    for (int i = 0; i < sampleSize; ++i) {
-        for (int j = 0; j < arraySize; ++j) {
+    for (size_t i = 0; i < sampleSize; ++i) {
+        for (size_t j = 0; j < arraySize; ++j) {
             temp[j] += sum[i * arraySize + j];
         }
     }
 
-    for (int i = 0; i < arraySize; ++i) {
+    for (size_t i = 0; i < arraySize; ++i) {
         average[i] = static_cast<T>(temp[i] / sampleSize);
     }
 }
