@@ -74,7 +74,7 @@ SerialPort::~SerialPort() {
 
 void SerialPort::write(const char* data, size_t len) const {
     if (fp >= 0) {
-        if(::write(fp, data, len) > 0) {
+        if(::write(fp, data, len) == -1) {
             throw std::runtime_error("Failed to write to serial port");
         }
     } else {
