@@ -1,21 +1,28 @@
-#include "simpleConfigParser.h"
+#include <iostream>
+#include <variant>
+#include <optional>
+#include "ConfigParser.h"
 #include "v4l2mode.hpp"
 #include "networkmode.hpp"
-#include <iostream>
 
 int main(int argc, char** argv) {
-#ifdef __AVX2__
-    std::cout << "Using AVX2 optimizations" << std::endl;
-#elif __SSE2__
-    std::cout << "Using SSE2 optimizations" << std::endl;
-#endif
+    // Check arguments
     if (argc != 2) {
         std::cout << "Usage: " << argv[0] << " <config file>" << std::endl;
         return -1;
     }
 
-    std::map<std::string, std::string> config = parseConfig(argv[1]);
+    // Parse config
+    std::map<std::string, std::string> config;
+    try {
+        config = ConfigParser::parse(argv[1]);
+    }
+    catch (std::runtime_error& e) {
+        std::cout << "Error parsing config file: " << e.what() << std::endl;
+        return -1;
+    }
 
+    // Start in the correct mode
     if (config["mode"] == "v4l2") {
         start_v4l2mode(config);
     } else if (config["mode"] == "network") {

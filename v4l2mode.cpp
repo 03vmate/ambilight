@@ -52,11 +52,7 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
     int averaging_samples = std::stoi(config["averaging_samples"]);
 
     // Initialize serial port
-    SerialPort mcu = SerialPort();
-    if (mcu.init(config["serial_port"].c_str(), baudrate) != 0) {
-        std::cout << "Error initializing serial port" << std::endl;
-        exit(1);
-    }
+    SerialPort mcu = SerialPort(config["serial_port"], baudrate);
 
     // Open capture device
     int fd = open(config["capture_device"].c_str(), O_RDWR);

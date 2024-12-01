@@ -26,11 +26,7 @@ void start_networkmode(std::map<std::string, std::string> config) {
     int horizontal_leds = std::stoi(config["horizontal_leds"]);
 
     // Initialize serial port
-    SerialPort mcu = SerialPort();
-    if (mcu.init(config["serial_port"].c_str(), baudrate) != 0) {
-        std::cout << "Error initializing serial port" << std::endl;
-        exit(1);
-    }
+    SerialPort mcu = SerialPort(config["serial_port"], baudrate);
 
     // Initialize socket
     int serverSocket = socket(AF_INET, SOCK_STREAM, 0);

@@ -8,7 +8,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -march=native")
 
 set(SOURCES
         main.cpp
-        simpleConfigParser.h
+        ConfigParser.h
         SerialPort.cpp
         SerialPort.hpp
         colorOfBlock.hpp
@@ -18,6 +18,7 @@ set(SOURCES
         networkmode.hpp
         networkmode.cpp
         averager.h
+        ConfigParser.cpp
 )
 
 
