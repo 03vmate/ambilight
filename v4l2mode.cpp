@@ -171,7 +171,7 @@ void start_v4l2mode(std::map<std::string, std::string> config) {
 
         // Send data
         uint8_t* leddata_avg = new uint8_t[ledCount];
-        leddataAverager.getAverage(leddata_avg);
+        leddataAverager.getAverage<uint64_t>(leddata_avg); // Use uint64_t for summing internally to prevent overflow
 
         // Slow down on blank
         bool blank = true;

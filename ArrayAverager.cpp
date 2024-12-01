@@ -61,10 +61,11 @@ void ArrayAverager<T>::add(const T* array) {
 }
 
 template <typename T>
+template <typename T2> // Type of summing array - double would be almost universally appropriate, but it's slow
 void ArrayAverager<T>::getAverage(T* average) {
-    double temp[arraySize];
+    T2 temp[arraySize];
     for (int i = 0; i < arraySize; ++i) {
-        temp[i] = 0.0;
+        temp[i] = 0;
     }
 
     // Sum all the values
