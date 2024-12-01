@@ -63,6 +63,9 @@ void ArrayAverager<T>::add(const T* array) {
 template <typename T>
 void ArrayAverager<T>::getAverage(T* average) {
     double temp[arraySize];
+    for (int i = 0; i < arraySize; ++i) {
+        temp[i] = 0.0;
+    }
 
     // Sum all the values
     for (int i = 0; i < sampleSize; ++i) {
@@ -71,14 +74,8 @@ void ArrayAverager<T>::getAverage(T* average) {
         }
     }
 
-    // Divide by the sample size
     for (int i = 0; i < arraySize; ++i) {
-        temp[i] /= sampleSize;
-    }
-
-    // Copy the result to the output array
-    for (int i = 0; i < arraySize; ++i) {
-        average[i] = temp[i];
+        average[i] = static_cast<T>(temp[i] / sampleSize);
     }
 }
 
