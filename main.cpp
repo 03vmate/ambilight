@@ -2,14 +2,10 @@
 #include <variant>
 #include <optional>
 #include "ConfigParser.h"
-#include "v4l2mode.hpp"
-#include "networkmode.hpp"
-
-#include "ArrayAverager.h"
+#include "V4L2Mode.hpp"
+#include "NetworkMode.hpp"
 
 int main(int argc, char** argv) {
-
-
     // Check arguments
     if (argc != 2) {
         std::cout << "Usage: " << argv[0] << " <config file>" << std::endl;
@@ -28,9 +24,9 @@ int main(int argc, char** argv) {
 
     // Start in the correct mode
     if (config["mode"] == "v4l2") {
-        start_v4l2mode(config);
+        V4L2Mode::start(config);
     } else if (config["mode"] == "network") {
-        start_networkmode(config);
+        NetworkMode::start(config);
     } else {
         std::cout << "Invalid mode: " << config["mode"] << std::endl;
         return -1;

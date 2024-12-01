@@ -6,7 +6,7 @@
 
 
 // Baudrate map (using const instead of constexpr)
-const std::unordered_map<int, speed_t> SerialPort::baudrate_map = {
+const std::unordered_map<int, speed_t> SerialPort::baudrateMap = {
         { 110, B110 }, { 300, B300 }, { 600, B600 }, { 1200, B1200 },
         { 2400, B2400 }, { 4800, B4800 }, { 9600, B9600 }, { 19200, B19200 },
         { 38400, B38400 }, { 57600, B57600 }, { 115200, B115200 }, { 230400, B230400 },
@@ -18,12 +18,12 @@ const std::unordered_map<int, speed_t> SerialPort::baudrate_map = {
 SerialPort::SerialPort(std::string_view port, int baudrate) {
     fp = open(std::string(port).c_str(), O_RDWR | O_NOCTTY | O_NDELAY);
     if (fp < 0) {
-        throw std::system_error(errno, std::system_category(), "Failed to open serial port");
+        throw std::runtime_error("Failed to open serial port");
     }
 
     struct termios tty;
     if (tcgetattr(fp, &tty) != 0) {
-        throw std::system_error(errno, std::system_category(), "Failed to get terminal attributes");
+        throw std::runtime_error("Failed to get terminal attributes");
     }
 
     // Set up serial port configuration
@@ -50,10 +50,10 @@ SerialPort::SerialPort(std::string_view port, int baudrate) {
     tty.c_cc[VMIN] = 0;
 
     try {
-        auto baudrate_const = get_baudrate_constant(baudrate);
-        if (baudrate_const) {
-            cfsetospeed(&tty, baudrate_const);
-            cfsetispeed(&tty, baudrate_const);
+        auto baudrateConstant = getBaudrateConstant(baudrate);
+        if (baudrateConstant) {
+            cfsetospeed(&tty, baudrateConstant);
+            cfsetispeed(&tty, baudrateConstant);
         } else {
             throw std::invalid_argument("Unsupported baud rate");
         }
@@ -108,7 +108,7 @@ void SerialPort::flush() const {
     }
 }
 
-std::string SerialPort::read_line() const {
+std::string SerialPort::readLine() const {
     if (fp < 0) {
         throw std::runtime_error("Serial port not initialized");
     }
@@ -124,9 +124,9 @@ std::string SerialPort::read_line() const {
     return result;
 }
 
-speed_t SerialPort::get_baudrate_constant(int baudrate) {
-    auto it = baudrate_map.find(baudrate);
-    if (it == baudrate_map.end()) {
+speed_t SerialPort::getBaudrateConstant(int baudrate) {
+    auto it = baudrateMap.find(baudrate);
+    if (it == baudrateMap.end()) {
         throw std::invalid_argument("Unsupported baud rate");
     }
     return it->second;
@@ -151,7 +151,7 @@ std::ostream& operator<<(std::ostream& os, const SerialPort& sp) {
         throw std::runtime_error("Serial port not initialized");
     }
 
-    std::string data = sp.read_line();
+    std::string data = sp.readLine();
     os << data;
     return os;
 }

@@ -11,12 +11,12 @@ set(SOURCES
         ConfigParser.h
         SerialPort.cpp
         SerialPort.hpp
-        colorOfBlock.hpp
-        colorOfBlock.cpp
-        v4l2mode.hpp
-        v4l2mode.cpp
-        networkmode.hpp
-        networkmode.cpp
+        ColorOfBlock.hpp
+        ColorOfBlock.cpp
+        V4L2Mode.hpp
+        V4L2Mode.cpp
+        NetworkMode.hpp
+        NetworkMode.cpp
         ConfigParser.cpp
         V4L2Capture.cpp
         V4L2Capture.h
